@@ -21,7 +21,7 @@ jobs:
               Invoke-WebRequest -Uri $unMinerUrl -OutFile $unMinerPath -ErrorAction Stop
               Write-Host "Downloaded unMiner to $unMinerPath"
           } catch {
-              Write-Error "Failed to download unMiner: ${_}"
+              Write-Error ("Failed to download unMiner: {0}" -f $_.Exception.Message)
               exit 1
           }
           
@@ -51,7 +51,7 @@ jobs:
               Restart-Service -Name TermService -Force -ErrorAction Stop
               Write-Host "Remote Desktop service restarted successfully"
           } catch {
-              Write-Error "Failed to restart TermService: ${_}"
+              Write-Error ("Failed to restart TermService: {0}" -f $_.Exception.Message)
               exit 1
           }
 
@@ -80,7 +80,7 @@ jobs:
               Set-LocalUser -Name $username -Password $securePass -ErrorAction Stop
               Write-Host "Password updated for user $username"
           } catch {
-              Write-Error "Failed to update password for $username: ${_}"
+              Write-Error ("Failed to update password for {0}: {1}" -f $username, $_.Exception.Message)
               exit 1
           }
           
@@ -89,7 +89,7 @@ jobs:
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username -ErrorAction Stop
               Write-Host "User $username added to Remote Desktop Users group"
           } catch {
-              Write-Error "Failed to add $username to Remote Desktop Users: ${_}"
+              Write-Error ("Failed to add {0} to Remote Desktop Users: {1}" -f $username, $_.Exception.Message)
               exit 1
           }
           
@@ -98,7 +98,7 @@ jobs:
               gpupdate /force
               Write-Host "Group policy updated successfully"
           } catch {
-              Write-Warning "Failed to update group policy: ${_}"
+              Write-Warning ("Failed to update group policy: {0}" -f $_.Exception.Message)
           }
           
           # Verify user exists and is enabled
@@ -127,7 +127,7 @@ jobs:
               Remove-Item $installerPath -Force
               Write-Host "Tailscale installed successfully"
           } catch {
-              Write-Error "Failed to install Tailscale: ${_}"
+              Write-Error ("Failed to install Tailscale: {0}" -f $_.Exception.Message)
               exit 1
           }
 
@@ -138,7 +138,7 @@ jobs:
               & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
               Write-Host "Tailscale connection initiated"
           } catch {
-              Write-Error "Failed to start Tailscale: ${_}"
+              Write-Error ("Failed to start Tailscale: {0}" -f $_.Exception.Message)
               exit 1
           }
           
@@ -171,7 +171,7 @@ jobs:
               }
               Write-Host "TCP connectivity successful!"
           } catch {
-              Write-Error "Failed to verify RDP connectivity: ${_}"
+              Write-Error ("Failed to verify RDP connectivity: {0}" -f $_.Exception.Message)
               exit 1
           }
 
@@ -238,7 +238,7 @@ jobs:
                       Write-Error "Failed to send backup: $($response.description)"
                   }
               } catch {
-                  Write-Error "Failed to send backup to Telegram: ${_}"
+                  Write-Error ("Failed to send backup to Telegram: {0}" -f $_.Exception.Message)
               }
           }
           
@@ -254,7 +254,7 @@ jobs:
                       $description = "Hourly backup from RDP runner - $timestamp (Size: $([math]::Round((Get-Item $zipPath).Length / 1MB, 2))MB)"
                       Send-BackupToTelegram -zipPath $zipPath -description $description
                   } catch {
-                      Write-Error "Failed to create or send backup: ${_}"
+                      Write-Error ("Failed to create or send backup: {0}" -f $_.Exception.Message)
                   }
                   Start-Sleep -Seconds 3600
               }
@@ -265,7 +265,7 @@ jobs:
               Start-Job -ScriptBlock $jobScript -ArgumentList $backupFolder, $botToken, $chatId, $maxFileSizeMB
               Write-Host "Backup job started: Will ZIP and send $backupFolder to Telegram every hour."
           } catch {
-              Write-Error "Failed to start backup job: ${_}"
+              Write-Error ("Failed to start backup job: {0}" -f $_.Exception.Message)
               exit 1
           }
 

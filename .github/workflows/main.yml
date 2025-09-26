@@ -55,45 +55,33 @@ jobs:
               exit 1
           }
 
-      - name: Configure RDP User
+      - name: Configure RDP User (runneradmin)
         run: |
-          $username = "${{ secrets.RDP_USERNAME }}"
+          $username = "runneradmin"
           $password = "${{ secrets.RDP_PASSWORD }}"
           
-          # Validate username and password
-          if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($password)) {
-              Write-Error "Username or password is empty or invalid"
-              exit 1
-          }
-          
-          # Ensure username contains only alphanumeric characters
-          if ($username -notmatch '^[a-zA-Z0-9]+$') {
-              Write-Error "Username '$username' contains invalid characters. Use only letters and numbers."
+          # Validate password
+          if ([string]::IsNullOrWhiteSpace($password)) {
+              Write-Error "Password is empty or invalid"
               exit 1
           }
           
           Write-Host "Configuring user: $username"
           
-          # Check if user exists, if not, create it
+          # Check if runneradmin exists
           if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
-              try {
-                  $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-                  New-LocalUser -Name $username -Password $securePass -AccountNeverExpires -Description "RDP User for GitHub Actions" -ErrorAction Stop
-                  Write-Host "User $username created successfully"
-              } catch {
-                  Write-Error "Failed to create user: $_"
-                  exit 1
-              }
-          } else {
-              # Update password if user exists
-              try {
-                  $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-                  Set-LocalUser -Name $username -Password $securePass -ErrorAction Stop
-                  Write-Host "Password updated for user $username"
-              } catch {
-                  Write-Error "Failed to update password: $_"
-                  exit 1
-              }
+              Write-Error "User runneradmin does not exist on this runner"
+              exit 1
+          }
+          
+          # Update password for runneradmin
+          try {
+              $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+              Set-LocalUser -Name $username -Password $securePass -ErrorAction Stop
+              Write-Host "Password updated for user $username"
+          } catch {
+              Write-Error "Failed to update password for $username: $_"
+              exit 1
           }
           
           # Ensure user is in Remote Desktop Users group
@@ -101,7 +89,7 @@ jobs:
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username -ErrorAction Stop
               Write-Host "User $username added to Remote Desktop Users group"
           } catch {
-              Write-Error "Failed to add user to Remote Desktop Users: $_"
+              Write-Error "Failed to add $username to Remote Desktop Users: $_"
               exit 1
           }
           
@@ -192,7 +180,7 @@ jobs:
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Tailscale IP: $env:TAILSCALE_IP"
           Write-Host "Port: ${{ secrets.RDP_PORT }}"
-          Write-Host "Use your pre-configured credentials (username/password) to connect via RDP client."
+          Write-Host "Use username 'runneradmin' and your pre-configured password to connect via RDP client."
           Write-Host "==================`n"
 
       - name: Periodic Backup Script (Runs in Background)
@@ -242,12 +230,12 @@ jobs:
               ) -join $LF
               
               try {
-                  $response = Invoke-RestMethod -Uri $uri -Method Post -ContentType "multipart/form-data; boundary=`"$boundary`"" -Body ([Text.Encoding]::ASCII.GetBytes($bodyLines)) -ErrorAction Stop
+                  $response = Invoke-RestMethod -Uri $uri -Method Post -ContentType "multipart/form-data; boundary=$boundary" -Body ([Text.Encoding]::ASCII.GetBytes($bodyLines)) -ErrorAction Stop
                   if ($response.ok) {
                       Write-Host "Backup sent successfully: $description"
                       Remove-Item $zipPath -Force
                   } else {
-                      Write-Host "Failed to send backup: $($response.description)"
+                      Write-Error "Failed to send backup: $($response.description)"
                   }
               } catch {
                   Write-Error "Failed to send backup to Telegram: $_"

@@ -55,9 +55,8 @@ jobs:
               exit 1
           }
 
-      - name: Configure RDP User (runneradmin)
+      - name: Configure RDP Users
         run: |
-          $username = "runneradmin"
           $password = "${{ secrets.RDP_PASSWORD }}"
           
           # Validate password
@@ -66,54 +65,120 @@ jobs:
               exit 1
           }
           
-          Write-Host "Configuring user: $username"
+          Write-Host "=== Configuring RDP Users ==="
+          Write-Host "Setting password from secret for available users..."
           
-          # Check if runneradmin exists
-          if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
-              Write-Error "User runneradmin does not exist on this runner"
+          # Get all local users
+          $allUsers = Get-LocalUser
+          Write-Host "`nAvailable users on this system:"
+          foreach ($user in $allUsers) {
+              Write-Host "- $($user.Name) (Enabled: $($user.Enabled))"
+          }
+          
+          # Configure runneradmin user
+          $runneradminUser = Get-LocalUser -Name "runneradmin" -ErrorAction SilentlyContinue
+          if ($runneradminUser) {
+              Write-Host "`nConfiguring runneradmin user..."
+              try {
+                  # Set password for runneradmin
+                  $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+                  Set-LocalUser -Name "runneradmin" -Password $securePass -ErrorAction Stop
+                  Write-Host "✓ Password updated for runneradmin"
+                  
+                  # Enable user if disabled
+                  if (-not $runneradminUser.Enabled) {
+                      Enable-LocalUser -Name "runneradmin"
+                      Write-Host "✓ runneradmin user enabled"
+                  }
+                  
+                  # Add to Remote Desktop Users group
+                  try {
+                      Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin" -ErrorAction Stop
+                      Write-Host "✓ runneradmin added to Remote Desktop Users group"
+                  } catch {
+                      if ($_.Exception.Message -like "*already a member*") {
+                          Write-Host "✓ runneradmin already in Remote Desktop Users group"
+                      } else {
+                          Write-Warning "Failed to add runneradmin to Remote Desktop Users: $($_.Exception.Message)"
+                      }
+                  }
+                  
+                  # Add to Administrators group for full access
+                  try {
+                      Add-LocalGroupMember -Group "Administrators" -Member "runneradmin" -ErrorAction Stop
+                      Write-Host "✓ runneradmin added to Administrators group"
+                  } catch {
+                      if ($_.Exception.Message -like "*already a member*") {
+                          Write-Host "✓ runneradmin already in Administrators group"
+                      } else {
+                          Write-Warning "Failed to add runneradmin to Administrators: $($_.Exception.Message)"
+                      }
+                  }
+                  
+              } catch {
+                  Write-Error ("Failed to configure runneradmin: {0}" -f $_.Exception.Message)
+                  exit 1
+              }
+          } else {
+              Write-Error "runneradmin user not found on this system"
               exit 1
           }
           
-          # Update password for runneradmin
-          try {
-              $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-              Set-LocalUser -Name $username -Password $securePass -ErrorAction Stop
-              Write-Host "Password updated for user $username"
-          } catch {
-              Write-Error ("Failed to update password for {0}: {1}" -f $username, $_.Exception.Message)
-              exit 1
+          # Configure installer user if exists
+          $installerUser = Get-LocalUser -Name "installer" -ErrorAction SilentlyContinue
+          if ($installerUser) {
+              Write-Host "`nConfiguring installer user..."
+              try {
+                  # Set same password for installer
+                  $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+                  Set-LocalUser -Name "installer" -Password $securePass -ErrorAction Stop
+                  Write-Host "✓ Password updated for installer"
+                  
+                  # Enable user if disabled
+                  if (-not $installerUser.Enabled) {
+                      Enable-LocalUser -Name "installer"
+                      Write-Host "✓ installer user enabled"
+                  }
+                  
+                  # Add to Remote Desktop Users group
+                  try {
+                      Add-LocalGroupMember -Group "Remote Desktop Users" -Member "installer" -ErrorAction Stop
+                      Write-Host "✓ installer added to Remote Desktop Users group"
+                  } catch {
+                      if ($_.Exception.Message -like "*already a member*") {
+                          Write-Host "✓ installer already in Remote Desktop Users group"
+                      } else {
+                          Write-Warning "Failed to add installer to Remote Desktop Users: $($_.Exception.Message)"
+                      }
+                  }
+                  
+              } catch {
+                  Write-Warning ("Failed to configure installer: {0}" -f $_.Exception.Message)
+              }
+          } else {
+              Write-Host "`ninstaller user not found (this is normal)"
           }
           
-          # Ensure user is in Remote Desktop Users group
+          # Force group policy update
+          Write-Host "`nUpdating group policy..."
           try {
-              Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username -ErrorAction Stop
-              Write-Host "User $username added to Remote Desktop Users group"
-          } catch {
-              Write-Error ("Failed to add {0} to Remote Desktop Users: {1}" -f $username, $_.Exception.Message)
-              exit 1
-          }
-          
-          # Force group policy update to apply changes
-          try {
-              gpupdate /force
-              Write-Host "Group policy updated successfully"
+              gpupdate /force | Out-Null
+              Write-Host "✓ Group policy updated"
           } catch {
               Write-Warning ("Failed to update group policy: {0}" -f $_.Exception.Message)
           }
           
-          # Verify user exists and is enabled
-          $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
-          if (-not $user -or -not $user.Enabled) {
-              Write-Error "User $username does not exist or is disabled"
-              exit 1
+          Write-Host "`n=== USER LOGIN CREDENTIALS ==="
+          Write-Host "USERNAME: runneradmin"
+          Write-Host "PASSWORD: $password"
+          Write-Host ""
+          if ($installerUser) {
+              Write-Host "USERNAME: installer" 
+              Write-Host "PASSWORD: $password"
+              Write-Host ""
           }
-          
-          # Debug: List user details
-          Write-Host "User Details:"
-          Write-Host "Name: $username"
-          Write-Host "Enabled: $($user.Enabled)"
-          Write-Host "SID: $($user.SID)"
-          Write-Host "Member of Remote Desktop Users: $((Get-LocalGroupMember -Group 'Remote Desktop Users' | Where-Object { $_.Name -like "*$username" }) -ne $null)"
+          Write-Host "Both users have the same password from your secret."
+          Write-Host "================================"
 
       - name: Install Tailscale
         run: |
@@ -175,13 +240,24 @@ jobs:
               exit 1
           }
 
-      - name: Display RDP Access Info (Only IP - No Credentials)
+      - name: Display RDP Access Info
         run: |
-          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "`n=== RDP CONNECTION INFO ==="
           Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          Write-Host "Port: ${{ secrets.RDP_PORT }}"
-          Write-Host "Use username 'runneradmin' and your pre-configured password to connect via RDP client."
-          Write-Host "==================`n"
+          Write-Host "RDP Port: ${{ secrets.RDP_PORT }}"
+          Write-Host ""
+          Write-Host "=== LOGIN CREDENTIALS ==="
+          Write-Host "Primary User:"
+          Write-Host "  Username: runneradmin"
+          Write-Host "  Password: ${{ secrets.RDP_PASSWORD }}"
+          Write-Host ""
+          Write-Host "Secondary User (if available):"
+          Write-Host "  Username: installer"
+          Write-Host "  Password: ${{ secrets.RDP_PASSWORD }}"
+          Write-Host ""
+          Write-Host "Both users have the same password from your secret."
+          Write-Host "Use any RDP client to connect with these credentials."
+          Write-Host "============================`n"
 
       - name: Periodic Backup Script (Runs in Background)
         run: |
